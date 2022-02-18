@@ -51,11 +51,10 @@ class IAM_words(D.Dataset):
         self.output_max_len = OUTPUT_MAX_LEN
         self.augmentation = augmentation
 
-        self.transformer = marcalAugmentor.augmentor
-
     def __getitem__(self, index):
         word = self.file_label[index]
-        img, img_width = self.readImage_keepRatio(word[0], flip=FLIP)
+        img, img_width = readImage_keepRatio(word[0], flip=FLIP,
+                                             augmentation=self.augmentation)
         label, label_mask = self.label_padding(' '.join(word[1:]), num_tokens)
         return word[0], img, img_width, label
         #return {'index_sa': file_name, 'input_sa': in_data, 'output_sa': out_data, 'in_len_sa': in_len, 'out_len_sa': out_data_mask}
@@ -63,61 +62,6 @@ class IAM_words(D.Dataset):
     def __len__(self):
         return len(self.file_label)
 
-    def readImage_keepRatio(self, file_name, flip):
-        if RM_BACKGROUND:
-            file_name, thresh = file_name.split(',')
-            thresh = int(thresh)
-        if WORD_LEVEL:
-            subdir = 'words/'
-        else:
-            subdir = 'lines/'
-        url = baseDir + subdir + file_name + '.png'
-        img = cv2.imread(url, 0)
-        if img is None:
-            print('###!Cannot find image: ' + url)
-        if RM_BACKGROUND:
-            img[img>thresh] = 255
-        #img = 255 - img
-        #img = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-        #size = img.shape[0] * img.shape[1]
-
-        rate = float(IMG_HEIGHT) / img.shape[0]
-        img = cv2.resize(img, (int(img.shape[1]*rate)+1, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC) # INTER_AREA con error
-        # c04-066-01-08.png 4*3, for too small images do not augment
-        if self.augmentation: # augmentation for training data
-            img_new = self.transformer(img)
-            if img_new.shape[0] != 0 and img_new.shape[1] != 0:
-                rate = float(IMG_HEIGHT) / img_new.shape[0]
-                img = cv2.resize(img_new, (int(img_new.shape[1]*rate)+1, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC) # INTER_AREA con error
-            else:
-                img = 255 - img
-        else:
-            img = 255 - img
-
-        img_width = img.shape[-1]
-
-        if flip: # because of using pack_padded_sequence, first flip, then pad it
-            img = np.flip(img, 1)
-
-        if img_width > IMG_WIDTH:
-            outImg = cv2.resize(img, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_AREA)
-            #outImg = img[:, :IMG_WIDTH]
-            img_width = IMG_WIDTH
-        else:
-            outImg = np.zeros((IMG_HEIGHT, IMG_WIDTH), dtype='uint8')
-            outImg[:, :img_width] = img
-        outImg = outImg/255. #float64
-        outImg = outImg.astype('float32')
-        if VGG_NORMAL:
-            mean = [0.485, 0.456, 0.406]
-            std = [0.229, 0.224, 0.225]
-            outImgFinal = np.zeros([3, *outImg.shape])
-            for i in range(3):
-                outImgFinal[i] = (outImg - mean[i]) / std[i]
-            return outImgFinal, img_width
-
-        outImg = np.vstack([np.expand_dims(outImg, 0)] * 3) # GRAY->RGB
-        return outImg, img_width
 
     def label_padding(self, labels, num_tokens):
         new_label_len = []
@@ -137,6 +81,66 @@ class IAM_words(D.Dataset):
                 new_out.append(ele)
             return new_out
         return ll, make_weights(new_label_len, self.output_max_len)
+
+
+def readImage_keepRatio(file_name, flip, augmentation):
+    if RM_BACKGROUND:
+        file_name, thresh = file_name.split(',')
+        thresh = int(thresh)
+    if WORD_LEVEL:
+        subdir = 'words/'
+    else:
+        subdir = 'lines/'
+    url = baseDir + subdir + file_name + '.png'
+    img = cv2.imread(url, 0)
+    if img is None:
+        print('###!Cannot find image: ' + url)
+    if RM_BACKGROUND:
+        img[img > thresh] = 255
+    # img = 255 - img
+    # img = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+    # size = img.shape[0] * img.shape[1]
+
+    rate = float(IMG_HEIGHT) / img.shape[0]
+    img = cv2.resize(img, (
+        int(img.shape[1] * rate) + 1, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC)  # INTER_AREA con error
+    # c04-066-01-08.png 4*3, for too small images do not augment
+    if augmentation:  # augmentation for training data
+        img_new = marcalAugmentor.augmentor(img)
+        if img_new.shape[0] != 0 and img_new.shape[1] != 0:
+            rate = float(IMG_HEIGHT) / img_new.shape[0]
+            img = cv2.resize(img_new, (
+                int(img_new.shape[1] * rate) + 1, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC)  # INTER_AREA con error
+        else:
+            img = 255 - img
+    else:
+        img = 255 - img
+
+    img_width = img.shape[-1]
+
+    if flip:  # because of using pack_padded_sequence, first flip, then pad it
+        img = np.flip(img, 1)
+
+    if img_width > IMG_WIDTH:
+        outImg = cv2.resize(img, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_AREA)
+        # outImg = img[:, :IMG_WIDTH]
+        img_width = IMG_WIDTH
+    else:
+        outImg = np.zeros((IMG_HEIGHT, IMG_WIDTH), dtype='uint8')
+        outImg[:, :img_width] = img
+    outImg = outImg / 255.  # float64
+    outImg = outImg.astype('float32')
+    if VGG_NORMAL:
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+        outImgFinal = np.zeros([3, *outImg.shape])
+        for i in range(3):
+            outImgFinal[i] = (outImg - mean[i]) / std[i]
+        return outImgFinal, img_width
+
+    outImg = np.vstack([np.expand_dims(outImg, 0)] * 3)  # GRAY->RGB
+    return outImg, img_width
+
 
 def loadData():
     if WORD_LEVEL:
