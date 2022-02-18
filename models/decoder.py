@@ -30,7 +30,7 @@ class Decoder(nn.Module):
     # in_char: batch_size, vocab_size  hidden: (32, 256)  encoder_output: (55, 32, 256)
     def forward(self, in_char, hidden, encoder_output, src_len, prev_attn):
         width = encoder_output.shape[0]
-        enc_len = src_len.numpy() * (width/src_len[0])
+        enc_len = src_len.numpy() * (width/src_len.numpy()[0])
         enc_len = enc_len + 0.999
         enc_len = enc_len.astype('int')
         attn_weights = self.attention(hidden, encoder_output, enc_len, prev_attn) # b, t, 1

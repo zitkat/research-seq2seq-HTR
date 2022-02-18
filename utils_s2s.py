@@ -88,3 +88,23 @@ def writeLoss(loss_value, flag):
     with open(file_name, 'a') as f:
         f.write(str(loss_value))
         f.write(' ')
+
+
+def pred2char(pred: int) -> str:
+    if pred == tokens['END_TOKEN']:
+        return ''
+    else:
+        if pred == tokens['GO_TOKEN']:
+            return ''
+        elif pred == tokens['PAD_TOKEN']:
+            return '<PAD>'
+        else:
+            try:
+                letter_str = index2letter[pred - num_tokens]
+            except KeyError:
+                letter_str = '<unk>'
+            return letter_str
+
+
+def pred2str(pred):
+    return "".join(map(pred2char, pred))

@@ -19,11 +19,8 @@ from models.decoder import Decoder
 from models.attention import locationAttention as Attention
 #from models.attention import TroAttention as Attention
 from models.seq2seq import Seq2Seq
-from utils import visualizeAttn, writePredict, writeLoss, HEIGHT, WIDTH, output_max_len, vocab_size, FLIP, WORD_LEVEL, load_data_func, tokens
+from utils_s2s import visualizeAttn, writePredict, writeLoss, HEIGHT, WIDTH, output_max_len, vocab_size, FLIP, WORD_LEVEL, load_data_func, tokens
 
-parser = argparse.ArgumentParser(description='seq2seq net', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('start_epoch', type=int, help='load saved weights from which epoch')
-args = parser.parse_args()
 
 #torch.cuda.set_device(1)
 
@@ -32,7 +29,7 @@ LABEL_SMOOTH = True
 Bi_GRU = True
 VISUALIZE_TRAIN = True
 
-BATCH_SIZE = 32
+BATCH_SIZE = 8
 learning_rate = 2 * 1e-4
 #lr_milestone = [30, 50, 70, 90, 120]
 #lr_milestone = [20, 40, 60, 80, 100]
@@ -51,7 +48,7 @@ EARLY_STOP_EPOCH = 20 # None: no early stopping
 HIDDEN_SIZE_ENC = 512
 HIDDEN_SIZE_DEC = 512 # model/encoder.py SUM_UP=False: enc:dec = 1:2  SUM_UP=True: enc:dec = 1:1
 CON_STEP = None # CON_STEP = 4 # encoder output squeeze step
-CurriculumModelID = args.start_epoch
+CurriculumModelID = 0 # args.start_epoch
 #CurriculumModelID = -1 # < 0: do not use curriculumLearning, train from scratch
 #CurriculumModelID = 170 # 'save_weights/seq2seq-170.model.backup'
 EMBEDDING_SIZE = 60 # IAM
@@ -189,7 +186,7 @@ def train(train_loader, seq2seq, opt, teacher_rate, epoch):
         opt.zero_grad()
         loss.backward()
         opt.step()
-        total_loss += loss.data[0]
+        total_loss += loss.data.item()
 
     total_loss /= (num+1)
     return total_loss
@@ -212,7 +209,7 @@ def valid(valid_loader, seq2seq, epoch):
             loss_t = F.cross_entropy(output_t.view(-1, vocab_size),
                                  test_label, ignore_index=tokens['PAD_TOKEN'])
 
-        total_loss_t += loss_t.data[0]
+        total_loss_t += loss_t.data.item()
 
         if 'n04-015-00-01,171' in test_index:
             b = test_index.tolist().index('n04-015-00-01,171')
@@ -287,8 +284,8 @@ def main(train_loader, valid_loader, test_loader):
         start_epoch = 0
 
     for epoch in range(start_epoch, epochs):
+        lr = scheduler.get_last_lr()
         scheduler.step()
-        lr = scheduler.get_lr()[0]
         teacher_rate = teacher_force_func(epoch) if TEACHER_FORCING else False
         start = time.time()
         loss = train(train_loader, seq2seq, opt, teacher_rate, epoch)
@@ -322,7 +319,13 @@ def main(train_loader, valid_loader, test_loader):
                 print('Early Stopping at: %d. Best epoch is: %d' % (epoch, min_loss_index))
                 return min_loss_index
 
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='seq2seq net', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('start_epoch', type=int, help='load saved weights from which epoch')
+    args = parser.parse_args()
+
+    CurriculumModelID = args.start_epoch
     print(time.ctime())
     train_loader, valid_loader, test_loader = all_data_loader()
     mejorModelID = main(train_loader, valid_loader, test_loader)

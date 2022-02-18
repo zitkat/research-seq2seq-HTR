@@ -57,7 +57,8 @@ class Encoder(nn.Module):
         out = out.permute(3, 0, 2, 1) # (width, batch, height, channels)
         out.contiguous()
         #out = out.view(-1, batch_size, (((((self.height-2)//2)-2)//2-2-2-2)//2)*128) # (t, b, f) (173, 32, 1024)
-        out = out.view(-1, batch_size, self.height//16*512)
+        out = out.reshape(-1, batch_size, self.height//16*512)
+
         if self.step is not None:
             time_step, batch_size, n_feature = out.shape[0], out.shape[1], out.shape[2]
             out_short = Variable(torch.zeros(time_step//self.step, batch_size, n_feature*self.step)).cuda() # t//STEP, b, f*STEP
