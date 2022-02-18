@@ -45,6 +45,7 @@ num_classes, letter2index, index2letter = labelDictionary()
 tokens = {'GO_TOKEN': 0, 'END_TOKEN': 1, 'PAD_TOKEN': 2}
 num_tokens = len(tokens.keys())
 
+
 class IAM_words(D.Dataset):
     def __init__(self, file_label, augmentation=True):
         self.file_label = file_label
@@ -53,15 +54,19 @@ class IAM_words(D.Dataset):
 
     def __getitem__(self, index):
         word = self.file_label[index]
-        img, img_width = readImage_keepRatio(word[0], flip=FLIP,
-                                             augmentation=self.augmentation)
+        file_name, thresh = word[0].split(',')
+        if WORD_LEVEL:
+            subdir = 'words/'
+        else:
+            subdir = 'lines/'
+        url = baseDir + subdir + file_name + '.png'
+        img, img_width = readImage_keepRatio(url, thresh=thresh, augmentation=self.augmentation)
         label, label_mask = self.label_padding(' '.join(word[1:]), num_tokens)
         return word[0], img, img_width, label
         #return {'index_sa': file_name, 'input_sa': in_data, 'output_sa': out_data, 'in_len_sa': in_len, 'out_len_sa': out_data_mask}
 
     def __len__(self):
         return len(self.file_label)
-
 
     def label_padding(self, labels, num_tokens):
         new_label_len = []
@@ -83,34 +88,34 @@ class IAM_words(D.Dataset):
         return ll, make_weights(new_label_len, self.output_max_len)
 
 
-def readImage_keepRatio(file_name, flip, augmentation):
-    if RM_BACKGROUND:
-        file_name, thresh = file_name.split(',')
+def readImage_keepRatio(file_path, thresh, augmentation=False,
+                        target_img_width=IMG_WIDTH,
+                        target_img_height=IMG_HEIGHT,
+                        flip=FLIP, rm_background=RM_BACKGROUND,
+                        vgg_normal=VGG_NORMAL):
+    if rm_background:
         thresh = int(thresh)
-    if WORD_LEVEL:
-        subdir = 'words/'
-    else:
-        subdir = 'lines/'
-    url = baseDir + subdir + file_name + '.png'
-    img = cv2.imread(url, 0)
+    img = cv2.imdecode(np.fromfile(file_path, dtype=np.uint8), 0)  # cv2.IMREAD_GRAYSCALE
+
     if img is None:
-        print('###!Cannot find image: ' + url)
-    if RM_BACKGROUND:
+        print('###!Cannot find image: ' + file_path)
+    if rm_background:
         img[img > thresh] = 255
     # img = 255 - img
     # img = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
     # size = img.shape[0] * img.shape[1]
 
-    rate = float(IMG_HEIGHT) / img.shape[0]
+    rate = float(target_img_height) / img.shape[0]
     img = cv2.resize(img, (
-        int(img.shape[1] * rate) + 1, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC)  # INTER_AREA con error
+        int(img.shape[1] * rate) + 1, target_img_height), interpolation=cv2.INTER_CUBIC)  # INTER_AREA con error
     # c04-066-01-08.png 4*3, for too small images do not augment
     if augmentation:  # augmentation for training data
         img_new = marcalAugmentor.augmentor(img)
         if img_new.shape[0] != 0 and img_new.shape[1] != 0:
-            rate = float(IMG_HEIGHT) / img_new.shape[0]
+            rate = float(target_img_height) / img_new.shape[0]
             img = cv2.resize(img_new, (
-                int(img_new.shape[1] * rate) + 1, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC)  # INTER_AREA con error
+                int(img_new.shape[1] * rate) + 1, target_img_height),
+                             interpolation=cv2.INTER_CUBIC)  # INTER_AREA con error
         else:
             img = 255 - img
     else:
@@ -121,19 +126,20 @@ def readImage_keepRatio(file_name, flip, augmentation):
     if flip:  # because of using pack_padded_sequence, first flip, then pad it
         img = np.flip(img, 1)
 
-    if img_width > IMG_WIDTH:
-        outImg = cv2.resize(img, (IMG_WIDTH, IMG_HEIGHT), interpolation=cv2.INTER_AREA)
+    if img_width > target_img_width:
+        outImg = cv2.resize(img, (target_img_width, target_img_height),
+                            interpolation=cv2.INTER_AREA)
         # outImg = img[:, :IMG_WIDTH]
-        img_width = IMG_WIDTH
+        img_width = target_img_width
     else:
-        outImg = np.zeros((IMG_HEIGHT, IMG_WIDTH), dtype='uint8')
+        outImg = np.zeros((target_img_height, target_img_width), dtype='uint8')
         outImg[:, :img_width] = img
     outImg = outImg / 255.  # float64
     outImg = outImg.astype('float32')
-    if VGG_NORMAL:
+    if vgg_normal:
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
-        outImgFinal = np.zeros([3, *outImg.shape])
+        outImgFinal = np.zeros([3, *outImg.shape], dtype='float32')
         for i in range(3):
             outImgFinal[i] = (outImg - mean[i]) / std[i]
         return outImgFinal, img_width
